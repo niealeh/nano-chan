@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 import asyncio
 
 
-class Janitor():
+class Janitor(commands.Cog):
     """
     The main class wrapepr
     """
@@ -21,29 +21,8 @@ class Janitor():
         self.owner = None
         try:
             self.bg_task = self.bot.loop.create_task(self.daily_prune())
-            self.owner_task = self.bot.loop.create_task(self.setup_owner_dm())
         except Exception as e:
             self.bot.logger.warning(f'Error starting task prune_clovers: {e}')
-
-    async def setup_owner_dm(self):
-        await self.bot.wait_until_ready()
-        self.bot.logger.info(
-            f'Setting up owner channel {self.bot.bot_owner_id}')
-        try:
-            self.server_logs = self.bot.get_channel(378684962934751239)
-            self.owner = await self.bot.get_user_info(self.bot.bot_owner_id)
-        except Exception as e:
-            self.bot.logger.warning(f'Error getting owner: {e}')
-        self.bot.logger.info(f'User retrieved: {self.owner.name}')
-        try:
-            try:
-                await self.owner.create_dm()
-            except Exception as e:
-                self.bot.logger.warning(f'Error creating dm channel: {e}')
-            await self.owner.dm_channel.send('Bot started successfully')
-            #await self.server_logs.send('Bot started successfully')
-        except Exception as e:
-            self.bot.logger.warning(f'Error getting dm channel: {e}')
 
     def remove_clover(self, member) -> list:
         member_roles = member.roles.copy()
@@ -71,13 +50,16 @@ class Janitor():
         member_roles = member.roles.copy()
         role_list = []
         for index, role in enumerate(member_roles):
-            if role.name.lower() in ['muse', 'dev','lewd', 'swole', 'artsy', 'shokugeki', 'degenerate', 'simulcast', 'legacy', 'meta', 'stylish']:
+            if role.name.lower() in ['legacy', 'updated']:
                 role_list.append(role)
         for role in role_list:
             member_roles.remove(role)
         return member_roles
 
+    @commands.Cog.listener()
     async def on_message(self, message):
+        if isinstance(message.channel, discord.DMChannel):
+            return
         if message.author.bot:
             return
         if message.content.startswith('.iam'):
@@ -96,7 +78,7 @@ class Janitor():
                 has_key = True
             elif role.name.lower() == 'dedicated':
                 has_dedicated = True
-            elif role.name.lower() in ['muse', 'dev','lewd', 'swole', 'artsy', 'shokugeki', 'degenerate', 'simulcast', 'legacy', 'meta', 'stylish']:
+            elif role.name.lower() in ['legacy', 'updated']:
                 has_permrole = True
             elif role.name.lower() in ['member']:
                 has_member = True
@@ -242,8 +224,12 @@ class Janitor():
             self.bot.logger.warning(f'Issue resetting spam db: {e}')
         if prune_info['pruned']:
             try:
-                await mod_log.send(
-                    f'Pruned {prune_info["amount"]} clovers 🍀🔫')
+                local_embed = discord.Embed(
+                    color = 0x419400,
+                    title = 'Clovers pruned',
+                    description = f'Pruned {prune_info["amount"]} clovers 🍀🔫'
+                )
+                await mod_log.send(embed=local_embed)
             except Exception as e:
                 self.bot.logger.warning(
                     f'Error posting prune info to mod_log: {e}')
@@ -308,11 +294,14 @@ class Janitor():
         help? lmao bruh thats it. just run it at the end of the month and u good
         """
         roles_to_wipe = ['member', 'active', 'regular', 'contributor', 'addicted', 'insomniac', 'no-lifer']
+        color_roles = ['-2-', '-5-', '-10-', '-15-', '-20-', '-25-']
+        all_roles = ctx.channel.guild.roles
         local_embed = discord.Embed(
             title=f'Resetting Roles...',
             description=f'Please be patient, this might take a while...'
         )
         value_string =f'Clearing :key: role ... \n'\
+                      f'Clearing *Color* roles ... \n'\
                       f'Resetting *Member* role ...\n'\
                       f'Resetting *Active* role ...\n'\
                       f'Resetting *Regular* role ...\n'\
@@ -330,7 +319,7 @@ class Janitor():
         except Exception as e:
             self.bot.logger.warning(f'Error sending month_end message: {e}')
         key_role = None
-        for role in ctx.channel.guild.roles:
+        for role in all_roles:
             if role.name.lower() == '🔑':
                 key_role = role
         try:
@@ -345,10 +334,27 @@ class Janitor():
             l_embed = message.embeds[0]
             l_embed.set_field_at(0, name="Progress:", value="".join(values))
             await message.edit(embed = l_embed)
+        try:
+            for clear_color in color_roles:
+                clear_role = None
+                for role in all_roles:
+                    if role.name.lower() == clear_color:
+                        clear_role = role
+                await self.rem_all_members(ctx, clear_role)
+            values[1] = f'Clearing **Color** roles :white_check_mark: \n'
+            l_embed = message.embeds[0]
+            l_embed.set_field_at(0, name="Progress:", value="".join(values))
+            await message.edit(embed = l_embed)
+        except Exception as e:
+            self.bot.logger.warning(f'Error cleaning colors {e}')
+            values[1] = f'Clearing **Color** roles :x: \n'
+            l_embed = message.embeds[0]
+            l_embed.set_field_at(0, name="Progress:", value="".join(values))
+            await message.edit(embed = l_embed)
         for counter, role in enumerate(roles_to_wipe):
             members = await self.get_all_members(ctx, role)
             if not members:
-                values[counter+1] = f'Resetting **{role.title()}** role :x:\n'
+                values[counter+2] = f'Resetting **{role.title()}** role :x:\n'
                 l_embed = message.embeds[0]
                 l_embed.set_field_at(0, name="Progress:", value="".join(values))
                 await message.edit(embed = l_embed)
@@ -361,7 +367,7 @@ class Janitor():
                     await member.edit(roles=temp_roles)
                 except Exception as e:
                     self.bot.logger.warning(f'Error removing {role} from {member}:\n\n{e}')
-            values[counter+1] = f'Resetting **{role.title()}** role :white_check_mark:\n'
+            values[counter+2] = f'Resetting **{role.title()}** role :white_check_mark:\n'
             l_embed = message.embeds[0]
             l_embed.set_field_at(0, name="Progress:", value="".join(values))
             await message.edit(embed = l_embed)

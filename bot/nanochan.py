@@ -2,6 +2,7 @@
 Discord bot that spaces out spoiler comments
 """
 import yaml
+import os
 import discord
 from discord.ext.commands import Bot
 from time import time
@@ -14,7 +15,7 @@ class Nanochan(Bot):
     """
     actual bot class
     """
-    def __init__(self, config, logger,
+    def __init__(self, config, misc_config, logger, test,
                  postgres_controller: PostgresController):
         """
         init for bot class
@@ -22,7 +23,10 @@ class Nanochan(Bot):
         self.postgres_controller = postgres_controller
         self.start_time = int(time())
         self.version = discord.__version__
-        self.credentials = config['token']
+        if test:
+            self.credentials = os.environ['TOKEN']
+        else:
+            self.credentials = config['token']
         self.guild_id = config['guild_id']
         self.mod_log = config['mod_log']
         self.mod_info = config['mod_info']
@@ -34,6 +38,7 @@ class Nanochan(Bot):
         self.wait_time = config['wait_time']
         self.clover_days = config['clover_days']
         self.dm_forward = config['dm_forward']
+        self.timeout_id = misc_config['timeout_id']
         self.logger = logger
         super().__init__('-')
 
@@ -44,6 +49,8 @@ class Nanochan(Bot):
         """
         with open("config/config.yml", 'r') as yml_config:
             config = yaml.load(yml_config)
+        with open("config/misc_config.yml", 'r') as yml_config:
+            misc_config = yaml.load(yml_config)
         logger = getLogger('nanochan')
         console_handler = StreamHandler()
         console_handler.setFormatter(Formatter(
@@ -54,7 +61,28 @@ class Nanochan(Bot):
         postgres_cred = config['postgres_credentials']
         postgres_controller = await PostgresController.get_instance(
             logger=logger, connect_kwargs=postgres_cred)
-        return cls(config, logger, postgres_controller)
+        return cls(config, misc_config, logger, False, postgres_controller)
+
+    @classmethod
+    async def get_test_instance(cls):
+        """
+        async method to everything except the postgres_controller
+        """
+        with open("config/config.yml", 'r') as yml_config:
+            config = yaml.load(yml_config)
+        with open("config/misc_config.yml", 'r') as yml_config:
+            misc_config = yaml.load(yml_config)
+        logger = getLogger('nanochan')
+        console_handler = StreamHandler()
+        console_handler.setFormatter(Formatter(
+            '%(asctime)s %(levelname)s %(name)s: %(message)s')
+        )
+        logger.addHandler(console_handler)
+        logger.setLevel(INFO)
+        postgres_cred = config['postgres_credentials']
+        postgres_controller = await PostgresController.get_instance(
+            logger=logger, connect_kwargs=postgres_cred)
+        return cls(config, misc_config, logger, True, postgres_controller)
 
     def start_bot(self, cogs):
         """
@@ -72,7 +100,7 @@ class Nanochan(Bot):
         return current.strftime('%H:%M:%S')
 
     async def on_ready(self):
-        await self.change_presence(game=discord.Game(name=f'!faq in #commands-channel'))
+        await self.change_presence(activity=discord.Game(name=f'!faq in #commands-channel'))
         self.logger.info(f'\nLogged in as\n{self.user.name}'
                          f'\nVersion:\n {self.version}'
                          f'\n{self.user.id}\n------')

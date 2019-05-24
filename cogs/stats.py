@@ -14,7 +14,7 @@ ALLOWED_CHANNELS = [
     176429411443146752,
 ]
 
-class Stats:
+class Stats(commands.Cog):
     """
     Main stats class
     """
@@ -23,6 +23,7 @@ class Stats:
         self.bot = bot
         self.editible_posts = []
 
+    @commands.Cog.listener()
     async def on_message(self, message):
         if not isinstance(message.channel, discord.TextChannel):
             return
@@ -44,17 +45,18 @@ class Stats:
         except Exception as e:
             self.bot.logger.warning(f'Error adding emoji to db: {e}')
 
-    async def on_raw_reaction_add(self, emoji, message_id, channel_id, user_id):
+    @commands.Cog.listener()
+    async def on_raw_reaction_add(self, payload):
         """
         Called when an emoji is added
         """
-        channel = self.bot.get_channel(channel_id)
-        user = self.bot.get_user(user_id)
-        message = await channel.get_message(message_id)
+        channel = self.bot.get_channel(payload.channel_id)
+        user = self.bot.get_user(payload.user_id)
+        message = await channel.fetch_message(payload.message_id)
         for server_emoji in channel.guild.emojis:
-            if emoji.id == server_emoji.id:
+            if payload.emoji.id == server_emoji.id:
                 await self.bot.postgres_controller.add_emoji(
-                    emoji, message_id, user, message.author, channel, True, emoji.animated)
+                    payload.emoji, payload.message_id, user, message.author, channel, True, payload.emoji.animated)
 
     @commands.group(aliases=['s'])
     @commands.guild_only()
@@ -107,7 +109,6 @@ class Stats:
             description= temp_str
         )
         await ctx.send(embed=local_embed)
-
 
     @stats.command()
     async def user(self, ctx, user: discord.Member, days: int=-1):
@@ -188,8 +189,19 @@ class Stats:
         )
         await ctx.send(embed=local_embed)
 
-    @stats.command()
-    async def top(self, ctx, emoji: discord.Emoji, days: int=-1, channel=None):
+    @commands.group(aliases=['ts'])
+    @commands.guild_only()
+    async def top_stats(self, ctx):
+        """
+        This is the base command for the fun shit
+        """
+        if ctx.message.channel.id not in ALLOWED_CHANNELS:
+            return
+        if ctx.invoked_subcommand is None:
+            await ctx.send('bruh thats not even a command')
+
+    @top_stats.command(name='emoji')
+    async def top_emoij(self, ctx, emoji: discord.Emoji, days: int=-1, channel=None):
         """
         Returns top post in timespan with reacts
         """
@@ -209,14 +221,15 @@ class Stats:
             if channel.id in [259728514914189312, 220762067739738113, 230958006701916160, 304366022276939776]:
                 return
             try:
-                message = await channel.get_message(record['id'])
+                message = await channel.fetch_message(record['id'])
                 if len(message.clean_content) > 600:
                     msg_content = f'{message.clean_content[:500]} ... `(message shortened)`'
                 else:
                     msg_content = f'{message.clean_content[:500]}' if message.content != '' else ''
                 msg_str = f'`Author`: {message.author.mention} ({message.author})\n'\
                           f'`Channel`: {message.channel.mention}\n'\
-                          f'`Reacts`: {record["count"]}\n`Text`:\n{msg_content}\n'
+                          f'`Reacts`: {record["count"]}\n`Text`:\n{msg_content}\n'\
+                          f'`Message Link`: {message.jump_url}\n'
                 if message.attachments:
                     desc = ''
                     for file in message.attachments:
@@ -235,7 +248,103 @@ class Stats:
             )
         await ctx.send(embed=l_embed)
 
+    @top_stats.command(name='user')
+    async def top_user(self, ctx, user: discord.Member, emoji: discord.Emoji, days: int=-1, channel: discord.TextChannel=None):
+        """
+        Returns top post in timespan with reacts
+        """
+        channel_id = channel.id if channel else None
+        day_str = f'in the last {days} days' if days != -1 else f'since forever'
+        all_records = await self.bot.postgres_controller.get_top_post_by_emoji_and_user(
+             user.id, emoji, days, channel_id
+        )
+        l_embed = discord.Embed(
+            title=f'Top 3 Posts with {emoji} reacts {day_str} on {user.name}',
+            desc=f'___'
+        )
+        for index, record in enumerate(all_records):
+            channel = self.bot.get_channel(record['ch_id'])
+            embed_image = False
+            if channel.id in [183215451634008065]: 
+                embed_image = True
+            if channel.id in [259728514914189312, 220762067739738113, 230958006701916160, 304366022276939776]:
+                return
+            try:
+                message = await channel.fetch_message(record['id'])
+                if len(message.clean_content) > 600:
+                    msg_content = f'{message.clean_content[:500]} ... `(message shortened)`'
+                else:
+                    msg_content = f'{message.clean_content[:500]}' if message.content != '' else ''
+                msg_str = f'`Author`: {message.author.mention} ({message.author})\n'\
+                          f'`Channel`: {message.channel.mention}\n'\
+                          f'`Reacts`: {record["count"]}\n`Text`:\n{msg_content}\n'\
+                          f'`Message Link`: {message.jump_url}\n'
+                if message.attachments:
+                    desc = ''
+                    for file in message.attachments:
+                        if embed_image:
+                            desc += f'{file.url}'
+                        else:
+                            desc += f'**(!!might be nsfw!!)**:\n'\
+                                    f'<{file.url}>\n**(!!might be nsfw!!)**'
+                    msg_str += f'`Attachments` \n{desc}'
+            except discord.errors.NotFound:
+                msg_str = f'Message not found, probably deleted.'
+            l_embed.add_field(
+                name=f'**{index+1}.**',
+                value=msg_str,
+                inline=True,
+            )
+        await ctx.send(embed=l_embed)
 
+    @top_stats.command(name='reacts')
+    async def top_reacted(self, ctx, days: int=-1, channel=None):
+        """
+        Returns top post in timespan with reacts
+        """
+        channel_id = channel.id if channel else None
+        day_str = f'in the last {days} days' if days != -1 else f'since forever'
+        all_records = await self.bot.postgres_controller.get_top_post_by_reacts(
+            days, channel_id
+        )
+        l_embed = discord.Embed(
+            title=f'Top 3 Posts with reacts {day_str}',
+            desc=f'___'
+        )
+        for index, record in enumerate(all_records):
+            channel = self.bot.get_channel(record['ch_id'])
+            embed_image = False
+            if channel.id in [183215451634008065]: 
+                embed_image = True
+            if channel.id in [259728514914189312, 220762067739738113, 230958006701916160, 304366022276939776]:
+                return
+            try:
+                message = await channel.fetch_message(record['id'])
+                if len(message.clean_content) > 600:
+                    msg_content = f'{message.clean_content[:500]} ... `(message shortened)`'
+                else:
+                    msg_content = f'{message.clean_content[:500]}' if message.content != '' else ''
+                msg_str = f'`Author`: {message.author.mention} ({message.author})\n'\
+                          f'`Channel`: {message.channel.mention}\n'\
+                          f'`Reacts`: {record["count"]}\n`Text`:\n{msg_content}\n'\
+                          f'`Message Link`: {message.jump_url}\n'
+                if message.attachments:
+                    desc = ''
+                    for file in message.attachments:
+                        if embed_image:
+                            desc += f'{file.url}'
+                        else:
+                            desc += f'**(!!might be nsfw!!)**:\n'\
+                                    f'<{file.url}>\n**(!!might be nsfw!!)**'
+                    msg_str += f'`Attachments` \n{desc}'
+            except discord.errors.NotFound:
+                msg_str = f'Message not found, probably deleted.'
+            l_embed.add_field(
+                name=f'**{index+1}.**',
+                value=msg_str,
+                inline=True,
+            )
+        await ctx.send(embed=l_embed)
 
     @commands.command()
     @checks.has_permissions(manage_emojis=True)

@@ -2,9 +2,10 @@
 A cog that filters all but a specific few phrases. (ignores bots)
 """
 import discord
+from discord.ext import commands
 
 
-class Filter():
+class Filter(commands.Cog):
 
     def __init__(self, bot):
         super().__init__()
@@ -12,6 +13,7 @@ class Filter():
         self.channels = bot.filter_channels
         self.filter_allowed = bot.filter_allowed
 
+    @commands.Cog.listener()
     async def on_message(self, message):
         if isinstance(message.channel, discord.DMChannel):
             return
@@ -35,7 +37,7 @@ class Filter():
                 mod_info = self.bot.get_channel(259728514914189312)
                 await mod_info.send(
                     f'**{time} | SPAM:** {message.author} has had {user_deleted} '\
-                    f'messages deleted in #welcome-center'
+                    f'messages deleted in {message.channel.name}'
                 )
             self.bot.logger.info(
                 'Successfully deleted message from: '

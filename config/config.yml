@@ -32,9 +32,9 @@ filter_allowed:
     - ".iam Member"
 
 postgres_credentials:
-    host: ""
-    user: ""
-    database: ""
+    host: "localhost"
+    user: "user"
+    database: "nanochan"
     password: ""
 
 # Wait time in seconds (default 10 min)

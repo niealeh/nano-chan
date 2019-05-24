@@ -129,6 +129,18 @@ async def make_tables(pool: Pool, schema: str):
     );
     """.format(schema)
 
+    reports = """
+    CREATE TABLE IF NOT EXISTS {}.user_reports (
+        report_id SERIAL,
+        user_id BIGINT,
+        message_id BIGINT,
+        responder_id BIGINT DEFAULT null,
+        logtime TIMESTAMP DEFAULT current_timestamp,
+        response_time TIMESTAMP DEFAULT null,
+        PRIMARY KEY (report_id)
+    );
+    """.format(schema)
+
     await pool.execute(reacts)
     await pool.execute(fightclub)
     await pool.execute(spam)
@@ -138,6 +150,7 @@ async def make_tables(pool: Pool, schema: str):
     await pool.execute(servers)
     await pool.execute(channel_index)
     await pool.execute(reaction_spam)
+    await pool.execute(reports)
 
 
 class PostgresController():
@@ -351,6 +364,64 @@ class PostgresController():
             """.format(self.schema)
             return await self.pool.fetch(sql, emoji.id, date_delta)
 
+    async def get_top_post_by_emoji_and_user(self, user_id, emoji, days_to_subtract, channel_id):
+        """
+        Returns the id for the message with highest reacts of given emoi for a user
+        """
+        if days_to_subtract != -1:
+            date_delta = datetime.utcnow() - timedelta(days=days_to_subtract)
+        else:
+            date_delta = datetime.utcnow() - timedelta(days=9999)
+        if channel_id:
+            sql = """
+            SELECT message_id as id, channel_id as ch_id, count(message_id) AS count
+            FROM {}.emojis
+            WHERE emoji_id = $1 AND logtime > $2 AND reaction = true AND channel_id = $3
+            AND target_id = $4
+            GROUP BY message_id, channel_id
+            ORDER BY count DESC
+            LIMIT 3
+            """.format(self.schema)
+            return await self.pool.fetch(sql, emoji.id, date_delta, int(channel_id), int(user_id))
+        else:
+            sql = """
+            SELECT message_id as id, channel_id as ch_id, count(message_id) AS count
+            FROM {}.emojis
+            WHERE emoji_id = $1 AND logtime > $2 AND reaction = true AND target_id = $3
+            GROUP BY message_id, channel_id
+            ORDER BY count DESC
+            LIMIT 3
+            """.format(self.schema)
+            return await self.pool.fetch(sql, emoji.id, date_delta, int(user_id))
+
+    async def get_top_post_by_reacts(self, days_to_subtract, channel_id):
+        """
+        Returns the id for the message with highest reacts of given emoi
+        """
+        if days_to_subtract != -1:
+            date_delta = datetime.utcnow() - timedelta(days=days_to_subtract)
+        else:
+            date_delta = datetime.utcnow() - timedelta(days=9999)
+        if channel_id:
+            sql = """
+            SELECT message_id as id, channel_id as ch_id, count(message_id) AS count
+            FROM {}.emojis
+            WHERE logtime > $1 AND reaction = true AND channel_id = $2
+            GROUP BY message_id, channel_id
+            ORDER BY count DESC
+            LIMIT 3
+            """.format(self.schema)
+            return await self.pool.fetch(sql, date_delta, int(channel_id))
+        else:
+            sql = """
+            SELECT message_id as id, channel_id as ch_id, count(message_id) AS count
+            FROM {}.emojis
+            WHERE logtime > $1 AND reaction = true
+            GROUP BY message_id, channel_id
+            ORDER BY count DESC
+            LIMIT 3
+            """.format(self.schema)
+            return await self.pool.fetch(sql, date_delta)
 
     """
     Spam stuff
@@ -588,6 +659,19 @@ class PostgresController():
         except:
             return None
 
+    async def get_all_channels(self):
+        """
+        Returns all of the reaction channels
+        """
+        sql = """
+        SELECT target_channel, message_id, host_channel FROM {}.channel_index;
+        """.format(self.schema)
+
+        try:
+            return await self.pool.fetch(sql)
+        except:
+            return None
+
     async def get_target_channel(self, host_channel, message_id):
         """
         Returns the target channel of a message
@@ -638,3 +722,54 @@ class PostgresController():
         DELETE FROM {}.reaction_spam;
         """.format(self.schema)
         await self.pool.execute(sql)
+
+    async def add_user_report(self, user_id):
+        """
+        Adds a user report
+        """
+
+        sql = """
+        INSERT INTO {}.user_reports (report_id, user_id) VALUES (DEFAULT, $1)
+        RETURNING report_id;
+        """.format(self.schema)
+
+        return await self.pool.fetchval(sql, user_id)
+
+    async def set_report_message_id(self, report_id, message_id):
+        """
+        Sets the message_id of the report
+        """
+
+        sql = """
+        UPDATE {}.user_reports 
+        SET message_id = $1
+        WHERE report_id = $2;
+        """.format(self.schema)
+        
+        await self.pool.execute(sql, message_id, report_id)
+
+    async def add_user_report_response(self, report_id, responder_id):
+        """
+        Adds a response to a message
+        """
+
+        sql = """
+        UPDATE {}.user_reports 
+        SET response_time = current_timestamp, responder_id = $1
+        WHERE report_id = $2;
+        """.format(self.schema)
+        
+        await self.pool.execute(sql, responder_id, report_id)
+        
+
+    async def get_user_report(self, report_id):
+        """
+        Returns a user_report
+        """
+
+        sql = """
+        SELECT * FROM {}.user_reports
+        WHERE report_id = $1;
+        """.format(self.schema)
+
+        return await self.pool.fetch(sql, report_id)

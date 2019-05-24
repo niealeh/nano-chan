@@ -14,7 +14,7 @@ ALLOWED_CHANNELS = [
 ]
 
 
-class Reactions():
+class Reactions(commands.Cog):
     """
     """
 
@@ -74,6 +74,7 @@ class Reactions():
             await ctx.send('❌', delete_after=3)
             self.bot.logger.warning(f'Error adding reaction: {e}')
 
+    @commands.Cog.listener()
     async def on_message(self, message):
         """
         Actually responds with the reaction

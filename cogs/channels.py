@@ -9,7 +9,7 @@ from .utils import helpers, checks
 from discord.ext import commands
 
 
-class Channels():
+class Channels(commands.Cog):
     """
     """
 
@@ -71,7 +71,7 @@ class Channels():
             return
         if not message_id:
             return
-        og_message = await ctx.channel.get_message(message_id)
+        og_message = await ctx.channel.fetch_message(message_id)
         for reaction in og_message.reactions:
             async for user in reaction.users():
                 if user.bot:
@@ -95,7 +95,7 @@ class Channels():
             return
         if not message_id:
             return
-        og_message = await ctx.channel.get_message(message_id)
+        og_message = await ctx.channel.fetch_message(message_id)
         og_embed = og_message.embeds[0]
         og_embed.description = edit[:2046]
         await og_message.edit(embed=og_embed)
@@ -118,7 +118,7 @@ class Channels():
             return
         if not message_id:
             return
-        og_message = await ctx.channel.get_message(message_id)
+        og_message = await ctx.channel.fetch_message(message_id)
         og_embed = og_message.embeds[0]
         og_embed.title = f'#{target_channel.name}'
         await og_message.edit(embed=og_embed)
@@ -141,7 +141,7 @@ class Channels():
             return
         if not message_id:
             return
-        og_message = await ctx.channel.get_message(message_id)
+        og_message = await ctx.channel.fetch_message(message_id)
         og_embed = og_message.embeds[0]
         og_embed.color = discord.Color.from_rgb(int(red), int(green), int(blue))
         await og_message.edit(embed=og_embed)
@@ -164,7 +164,7 @@ class Channels():
             return
         if not message_id:
             return
-        og_message = await ctx.channel.get_message(message_id)
+        og_message = await ctx.channel.fetch_message(message_id)
         og_embed = og_message.embeds[0]
         try:
             og_embed.set_image(url=image_url)
@@ -192,7 +192,7 @@ class Channels():
             return
         if not message_id:
             return
-        og_message = await ctx.channel.get_message(message_id)
+        og_message = await ctx.channel.fetch_message(message_id)
         og_embed = og_message.embeds[0]
         try:
             og_embed.set_thumbnail(url=image_url)
@@ -221,7 +221,7 @@ class Channels():
             return
         if not message_id:
             return
-        og_message = await ctx.channel.get_message(message_id)
+        og_message = await ctx.channel.fetch_message(message_id)
         og_embed = og_message.embeds[0]
         try:
             og_embed.set_footer(text=footer)
@@ -233,17 +233,17 @@ class Channels():
         await ctx.send(":ok_hand:", delete_after=3)
         await ctx.message.delete()
 
-
-    async def on_raw_reaction_add(self, emoji, message_id, channel_id, user_id):
+    @commands.Cog.listener()
+    async def on_raw_reaction_add(self, payload):
         """
         Called when an emoji is added
         """
-        target_channel = await self.bot.postgres_controller.get_target_channel(channel_id, message_id)
+        target_channel = await self.bot.postgres_controller.get_target_channel(payload.channel_id, payload.message_id)
         if not target_channel:
                 return 
-        user = self.bot.get_user(user_id)
+        user = self.bot.get_user(payload.user_id)
         channel = self.bot.get_channel(target_channel)
-        reacts = await self.bot.postgres_controller.add_user_reaction(user_id, message_id)
+        reacts = await self.bot.postgres_controller.add_user_reaction(payload.user_id, payload.message_id)
         if int(reacts) in [10,20,100]:
                 time = self.bot.timestamp()
                 mod_info = self.bot.get_channel(259728514914189312)
@@ -253,15 +253,16 @@ class Channels():
                 )
         await self.add_perms(user, channel)
 
-    async def on_raw_reaction_remove(self, emoji, message_id, channel_id, user_id):
+    @commands.Cog.listener()
+    async def on_raw_reaction_remove(self, payload):
         """
         Called when an emoji is removed
         """
-        target_channel = await self.bot.postgres_controller.get_target_channel(channel_id, message_id)
+        target_channel = await self.bot.postgres_controller.get_target_channel(payload.channel_id, payload.message_id)
         if not target_channel:
             return
         channel = self.bot.get_channel(target_channel)
-        user = self.bot.get_user(user_id)
+        user = self.bot.get_user(payload.user_id)
         await self.remove_perms(user, channel)
     
     async def add_perms(self, user, channel):

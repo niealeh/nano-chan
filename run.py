@@ -1,14 +1,18 @@
 """
 Actually runs the code
 """
+import sys
 from asyncio import get_event_loop
 from bot import Nanochan
-from cogs import Spoils, Filter, Channels, Janitor, Logging, Stats, Owner, Reactions, Fightclub
+from cogs import Spoils, Filter, Tutoring, Pingy, Channels, Janitor, Moderation, Logging, Stats, Owner, Reactions, Fightclub
 
 
-def run():
+def run(test: bool):
     loop = get_event_loop()
-    bot = loop.run_until_complete(Nanochan.get_instance())
+    if test:
+        bot = loop.run_until_complete(Nanochan.get_test_instance())
+    else:
+        bot = loop.run_until_complete(Nanochan.get_instance())
     cogs = [
       Fightclub(bot),
       Logging(bot),
@@ -18,10 +22,15 @@ def run():
       Reactions(bot),
       Janitor(bot),
       Stats(bot),
-      Channels(bot)
+      Channels(bot),
+      Pingy(bot),
+      Tutoring(bot),
+      Moderation(bot)
     ]
     bot.start_bot(cogs)
 
 
 if __name__ == '__main__':
-    run()
+    if len(sys.argv) > 1:
+        run(True)
+    run(False)
